@@ -2,7 +2,6 @@
 session_start();
 require '../includes/config.php';
 
-// Restrict to logged-in users
 if (!isset($_SESSION['user'])) {
     header('Location: login.php');
     exit;
@@ -22,7 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $chapters = !empty($_POST['chapters']) ? (int)$_POST['chapters'] : null;
     $release_date = !empty($_POST['release_date']) ? $_POST['release_date'] : null;
 
-    // Validate inputs
     if (empty($title) || empty($type) || empty($synopsis) || empty($author) || empty($genre)) {
         $error = 'Please fill in all required fields.';
     } elseif (!in_array($type, ['LN', 'WN', 'VN'])) {
@@ -30,7 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!empty($external_link) && !filter_var($external_link, FILTER_VALIDATE_URL)) {
         $error = 'Invalid URL format.';
     } else {
-        // Handle file upload
         $cover_image = null;
         if (!empty($_FILES['cover_image']['name'])) {
             $allowed_types = ['image/jpeg', 'image/png'];
@@ -53,7 +50,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Insert into database
         if (!$error) {
             try {
                 $stmt = $db->prepare('

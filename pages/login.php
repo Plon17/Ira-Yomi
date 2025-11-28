@@ -5,7 +5,6 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 require __DIR__ . '/../includes/config.php';
 
-// Redirect if already logged in
 if (isset($_SESSION['user'])) {
     header('Location: ../index.php');
     exit;
@@ -16,11 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // Validate input
     if (empty($username) || empty($password)) {
         $error = 'Please enter both username and password.';
     } else {
-        // Check user credentials
         $stmt = $db->prepare('SELECT user_id, username, password, role, is_banned FROM users WHERE username = :username');
         $stmt->execute(['username' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -29,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($user['is_banned']) {
                 $error = 'Your account is banned.';
             } else {
-                // Set session
                 $_SESSION['user'] = [
                     'user_id' => $user['user_id'],
                     'username' => $user['username'],

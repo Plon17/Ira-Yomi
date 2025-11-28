@@ -9,19 +9,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $password = $_POST['password'] ?? '';
 
-    // Validate input
     if (empty($username) || empty($email) || empty($password)) {
         $error = 'Please fill in all fields.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Invalid email format.';
     } else {
-        // Check if username or email exists
         $stmt = $db->prepare('SELECT COUNT(*) FROM users WHERE username = :username OR email = :email');
         $stmt->execute(['username' => $username, 'email' => $email]);
         if ($stmt->fetchColumn() > 0) {
             $error = 'Username or email already taken.';
         } else {
-            // Insert new user (plain text password)
             $stmt = $db->prepare('INSERT INTO users (username, email, password, role) VALUES (:username, :email, :password, "user")');
             try {
                 $stmt->execute(['username' => $username, 'email' => $email, 'password' => $password]);

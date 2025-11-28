@@ -2,14 +2,12 @@
 session_start();
 require '../includes/config.php';
 
-// Get title_id from URL
 $title_id = isset($_GET['id']) && is_numeric($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($title_id <= 0) {
     $error = 'Invalid title ID.';
 } else {
     try {
-        // Admins can view unapproved titles, others only approved
         $query = 'SELECT title, type, synopsis, author, genre, tags, cover_image, external_link, volumes, chapters, release_date FROM titles WHERE title_id = :title_id';
         if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
             $query .= ' AND is_approved = 1';

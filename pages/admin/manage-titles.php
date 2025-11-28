@@ -2,17 +2,14 @@
 session_start();
 require '../../includes/config.php';
 
-// Restrict to admins
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
     header('Location: ../../index.php');
     exit;
 }
 
-// Initialize messages
 $error = '';
 $success = '';
 
-// Handle actions (approve, disapprove, delete, edit)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title_id = isset($_POST['title_id']) ? (int)$_POST['title_id'] : 0;
     $action = $_POST['action'] ?? '';
@@ -43,7 +40,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $chapters = !empty($_POST['chapters']) ? (int)$_POST['chapters'] : null;
                 $release_date = !empty($_POST['release_date']) ? $_POST['release_date'] : null;
 
-                // Validate inputs
                 if (empty($title) || empty($type) || empty($synopsis) || empty($author) || empty($genre)) {
                     $error = 'Please fill in all required fields.';
                 } elseif (!in_array($type, ['LN', 'WN', 'VN'])) {
@@ -51,11 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } elseif (!empty($external_link) && !filter_var($external_link, FILTER_VALIDATE_URL)) {
                     $error = 'Invalid URL format.';
                 } else {
-                    // Handle file upload
                     $cover_image = $_POST['existing_cover_image'] ?? null;
                     if (!empty($_FILES['cover_image']['name'])) {
                         $allowed_types = ['image/jpeg', 'image/png'];
-                        $max_size = 2 * 1024 * 1024; // 2MB
+                        $max_size = 2 * 1024 * 1024;
                         $file_type = $_FILES['cover_image']['type'];
                         $file_size = $_FILES['cover_image']['size'];
                         $file_tmp = $_FILES['cover_image']['tmp_name'];
@@ -107,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch all titles (approved and pending)
 try {
     $stmt = $db->query('SELECT title_id, title, type, is_approved, synopsis, author, genre, tags, cover_image, external_link, volumes, chapters, release_date FROM titles ORDER BY is_approved ASC, created_at DESC');
     $titles = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -145,7 +139,6 @@ try {
                 <li class="breadcrumb-item active" aria-current="page">Manage Titles</li>
             </ol>
         </nav>
-        <!-- Debug: Check error and success variables -->
         <?php if ($_SERVER['REQUEST_METHOD'] === 'POST' && $error): ?>
             <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
