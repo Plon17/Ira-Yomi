@@ -8,13 +8,38 @@ if (!isset($_SESSION['user'])) {
 }
 
 $user_id = $_SESSION['user']['user_id'];
+$active_tab = $_GET['tab'] ?? 'favorites';
 
-/* ---------------------------------------
-   USER INFO
----------------------------------------- */
-$stmt = $db->prepare('SELECT username, email, created_at FROM users WHERE user_id = ?');
+// Handle profile update
+$success = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    $display_name = trim($_POST['display_name']);
+    $profile_pic = $_POST['current_pic'] ?? 'images/default-avatar.png';
+
+    if (!empty($_FILES['profile_pic']['name'])) {
+        $allowed = ['image/jpeg', 'image/png', 'image/gif'];
+        if (in_array($_FILES['profile_pic']['type'], $allowed) && $_FILES['profile_pic']['size'] < 2*1024*1024) {
+            $ext = pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION);
+            $filename = 'profile_' . $user_id . '.' . $ext;
+            $path = '../images/avatars/' . $filename;
+            if (move_uploaded_file($_FILES['profile_pic']['tmp_name'], $path)) {
+                $profile_pic = 'images/avatars/' . $filename;
+            }
+        }
+    }
+
+    $stmt = $db->prepare('UPDATE users SET display_name = ?, profile_pic = ? WHERE user_id = ?');
+    $stmt->execute([$display_name ?: null, $profile_pic, $user_id]);
+    
+    $_SESSION['user']['display_name'] = $display_name;
+    $_SESSION['user']['profile_pic'] = $profile_pic;
+    $success = "Profile updated!";
+}
+
+// Load user info
+$stmt = $db->prepare('SELECT username, email, display_name, profile_pic, created_at FROM users WHERE user_id = ?');
 $stmt->execute([$user_id]);
-$user = $stmt->fetch(PDO::FETCH_ASSOC);
+$user = $stmt->fetch();
 
 /* ---------------------------------------
    STATS
@@ -73,48 +98,67 @@ $type_stmt = $db->prepare('
 $type_stmt->execute([$user_id]);
 $type_data = $type_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ---------------------------------------
-   SUBMITTED TITLES
----------------------------------------- */
-$submitted = $db->prepare('
-    SELECT title_id, title, type, cover_image, is_approved 
-    FROM titles 
-    WHERE added_by = ? 
-    ORDER BY created_at DESC
-');
+// Submitted titles
+$submitted = $db->prepare('SELECT title_id, title, type, cover_image, is_approved FROM titles WHERE added_by = ? ORDER BY created_at DESC');
 $submitted->execute([$user_id]);
-$submitted_titles = $submitted->fetchAll(PDO::FETCH_ASSOC);
+$submitted_titles = $submitted->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Profile - Ira-Yomi</title>
-
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<style>
-    body { background:#f8f9fa; }
-    .profile-header { background:linear-gradient(135deg, #1da1f2, #1a91da); color:white; padding:60px 0; border-radius:20px; }
-    .stat-card { background:white; border-radius:15px; box-shadow:0 6px 20px rgba(0,0,0,0.1); padding:25px; text-align:center; }
-    .nav-tabs .nav-link.active { background:#1da1f2; color:white; border:none; }
-    .nav-tabs .nav-link { color:#1da1f2; border-radius:10px; cursor:pointer; }
-    .card-img-top { height:200px; object-fit:cover; border-radius:10px; }
-</style>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Ira-Yomi</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background:#f8f9fa; }
+        .profile-header { background:linear-gradient(135deg, #1da1f2, #1a91da); color:white; padding:60px 0; border-radius:20px; }
+        .profile-img-big { width:120px; height:120px; border-radius:50%; object-fit:cover; border:5px solid white; box-shadow:0 8px 20px rgba(0,0,0,0.3); }
+        .stat-card { background:white; border-radius:15px; box-shadow:0 6px 20px rgba(0,0,0,0.1); padding:25px; text-align:center; }
+        .nav-tabs .nav-link.active { background:#1da1f2; color:white; border:none; }
+        .nav-tabs .nav-link { color:#1da1f2; border-radius:10px; }
+        .card-img-top { height:200px; object-fit:cover; border-radius:10px; }
+    </style>
 </head>
 <body>
+    <?php include '../includes/header.php'; ?>
 
-<?php include '../includes/header.php'; ?>
+    <div class="container my-5">
+        <div class="profile-header text-center mb-5">
+            <img src="../<?php echo $user['profile_pic'] ?? 'images/default-avatar.png'; ?>" class="profile-img-big mb-3" alt="Profile">
+            <h1 class="display-4"><?php echo htmlspecialchars($user['display_name'] ?: $user['username']); ?></h1>
+            <p class="lead">@<?php echo htmlspecialchars($user['username']); ?> • Member since <?php echo date('F Y', strtotime($user['created_at'])); ?></p>
+            <button class="btn btn-light mt-2" id="editProfileBtn">Edit Profile</button>
+        </div>
 
-<div class="container my-5">
+        <?php if ($success): ?>
+            <div class="alert alert-success alert-dismissible fade show">
+                <?php echo $success; ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
 
-    <div class="profile-header text-center mb-5">
-        <h1 class="display-4"><?= htmlspecialchars($user['username']); ?></h1>
-        <p class="lead">Member since <?= date('F Y', strtotime($user['created_at'])); ?></p>
-    </div>
+        <!-- Profile Edit -->
+        <div class="card mb-5 shadow" id="profileEditForm" style="display:none;">
+            <div class="card-body">
+                <h4>Edit Profile</h4>
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Display Name</label>
+                            <input type="text" name="display_name" class="form-control" value="<?php echo htmlspecialchars($user['display_name'] ?? ''); ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Profile Picture</label>
+                            <input type="file" name="profile_pic" class="form-control" accept="image/*">
+                            <input type="hidden" name="current_pic" value="<?php echo $user['profile_pic'] ?? ''; ?>">
+                        </div>
+                    </div>
+                    <button type="submit" name="update_profile" class="btn btn-primary mt-3">Save Changes</button>
+                </form>
+            </div>
+        </div>
 
     <!-- Stats -->
     <div class="row mb-5 g-4">
@@ -155,102 +199,115 @@ $submitted_titles = $submitted->fetchAll(PDO::FETCH_ASSOC);
         <?php endif; ?>
     </div>
 
-    <!-- Tabs -->
-    <ul class="nav nav-tabs justify-content-center mb-4">
-        <li class="nav-item"><a class="nav-link active" data-tab="favorites">Favorites</a></li>
-        <li class="nav-item"><a class="nav-link" data-tab="reading">Reading</a></li>
-        <li class="nav-item"><a class="nav-link" data-tab="plantoread">Plan to Read</a></li>
-    </ul>
+        <!-- Tabs -->
+        <ul class="nav nav-tabs justify-content-center mb-4">
+            <li class="nav-item">
+                <a class="nav-link <?php echo $active_tab==='favorites'?'active':''; ?>" href="?tab=favorites" data-tab="favorites">Favorites</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $active_tab==='reading'?'active':''; ?>" href="?tab=reading" data-tab="reading">Reading</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $active_tab==='plantoread'?'active':''; ?>" href="?tab=plantoread" data-tab="plantoread">Plan to Read</a>
+            </li>
+        </ul>
 
-    <!-- List Container (AJAX-loaded) -->
-    <div id="listContainer" class="row g-4"></div>
+        <!-- Dynamic List -->
+        <div id="listContainer" class="row g-4">
+            <!-- Filled by JavaScript -->
+        </div>
 
-    <!-- Submitted Titles -->
-    <div class="mt-5">
-        <h3>Your Submitted Titles</h3>
-        <?php foreach ($submitted_titles as $t): ?>
-            <div class="card mb-3">
-                <div class="row g-0">
-                    <div class="col-3">
-                        <img src="../<?= $t['cover_image'] ?? 'images/default-cover.jpg'; ?>" class="img-fluid rounded-start" style="height:100%;object-fit:cover;">
-                    </div>
-                    <div class="col-9">
-                        <div class="card-body">
-                            <h6><?= htmlspecialchars($t['title']); ?></h6>
-                            <small class="text-muted">Status: <?= $t['is_approved'] ? 'Approved' : 'Pending'; ?></small>
+        <!-- Submitted Titles -->
+        <div class="mt-5">
+            <h3>Your Submitted Titles</h3>
+            <?php if (empty($submitted_titles)): ?>
+                <p>You haven't submitted any titles yet.</p>
+            <?php else: ?>
+                <?php foreach ($submitted_titles as $t): ?>
+                    <div class="card mb-3">
+                        <div class="row g-0">
+                            <div class="col-3">
+                                <img src="../<?php echo $t['cover_image'] ?? 'images/default-cover.jpg'; ?>" class="img-fluid rounded-start" style="height:100%;object-fit:cover;">
+                            </div>
+                            <div class="col-9">
+                                <div class="card-body">
+                                    <h6><?php echo htmlspecialchars($t['title']); ?></h6>
+                                    <small class="text-muted">Status: <?php echo $t['is_approved'] ? 'Approved' : 'Pending'; ?></small>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        <?php endforeach; ?>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
     </div>
 
-</div>
+    <?php include '../includes/footer.php'; ?>
 
-<?php include '../includes/footer.php'; ?>
+    <!-- AJAX Loader -->
+    <script>
+    function loadList(tab) {
+        fetch("profile_list.php?tab=" + tab)
+            .then(r => r.text())
+            .then(html => {
+                document.getElementById("listContainer").innerHTML = html;
+            });
+    }
 
-<!-- AJAX Loader -->
-<script>
-function loadList(tab) {
-    fetch("profile_list.php?tab=" + tab)
-        .then(r => r.text())
-        .then(html => {
-            document.getElementById("listContainer").innerHTML = html;
+    document.querySelectorAll(".nav-tabs .nav-link").forEach(link => {
+        link.addEventListener("click", function(e) {
+            e.preventDefault(); // prevent full page reload
+            document.querySelector(".nav-tabs .nav-link.active").classList.remove("active");
+            this.classList.add("active");
+            loadList(this.dataset.tab);
         });
-}
-
-document.querySelectorAll(".nav-link").forEach(link => {
-    link.addEventListener("click", function() {
-        document.querySelector(".nav-link.active").classList.remove("active");
-        this.classList.add("active");
-        loadList(this.dataset.tab);
     });
-});
 
-loadList("favorites");
-</script>
+    // Load the active tab on page load
+    loadList('<?php echo $active_tab; ?>');
+    </script>
 
-<!-- Charts JS -->
-<script>
-<?php if (!empty($genre_data)): ?>
-new Chart(document.getElementById('genreChart'), {
-    type: 'doughnut',
-    data: {
-        labels: <?= json_encode(array_column($genre_data, 'genre_name')); ?>,
-        datasets: [{
-            data: <?= json_encode(array_column($genre_data, 'cnt')); ?>,
-            backgroundColor: ['#1da1f2','#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#c9cbcf','#ff9f40']
-        }]
-    },
-    options: {
-        responsive: true,
-        plugins: {
-            legend: {
-                position: 'right', // MOVED HERE
-                labels: { boxWidth: 20 }
-            }
+    <?php if (!empty($genre_data)): ?>
+    <script>
+    new Chart(document.getElementById('genreChart'), {
+        type: 'doughnut',
+        data: {
+            labels: <?php echo json_encode(array_column($genre_data, 'genre_name')); ?>,
+            datasets: [{ data: <?php echo json_encode(array_column($genre_data, 'cnt')); ?>,
+                backgroundColor: ['#1da1f2','#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#c9cbcf','#ff9f40']
+            }]
+        },
+        options: { responsive:true, plugins:{legend:{position:'right'}} }
+    });
+    </script>
+    <?php endif; ?>
+
+    <?php if (!empty($type_data)): ?>
+    <script>
+    new Chart(document.getElementById('typeChart'), {
+        type: 'bar',
+        data: {
+            labels: <?php echo json_encode(array_column($type_data, 'type')); ?>,
+            datasets: [{ data: <?php echo json_encode(array_column($type_data, 'cnt')); ?>, backgroundColor:'#74b9ff' }]
+        },
+        options: { plugins:{legend:{display:false}}, responsive:true }
+    });
+    </script>
+    <?php endif; ?>
+
+    <script>
+    document.getElementById('editProfileBtn').addEventListener('click', function() {
+        const form = document.getElementById('profileEditForm');
+        if (form.style.display === 'none') {
+            form.style.display = 'block';
+            this.textContent = 'Cancel';
+        } else {
+            form.style.display = 'none';
+            this.textContent = 'Edit Profile';
         }
-    }
-});
-<?php endif; ?>
+    });
+    </script>
 
-<?php if (!empty($type_data)): ?>
-new Chart(document.getElementById('typeChart'), {
-    type: 'bar',
-    data: {
-        labels: <?= json_encode(array_column($type_data, 'type')); ?>,
-        datasets: [{
-            data: <?= json_encode(array_column($type_data, 'cnt')); ?>,
-            backgroundColor: '#74b9ff'
-        }]
-    },
-    options: {
-        plugins: { legend: { display: false } },
-        responsive: true
-    }
-});
-<?php endif; ?>
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
