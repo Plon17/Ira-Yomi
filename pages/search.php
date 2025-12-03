@@ -2,11 +2,20 @@
 session_start();
 require '../includes/config.php';
 
-// Get search term and selected genres
+// Get search term and selected genres SAFELY
 $query = trim($_GET['q'] ?? '');
-$selected_genres = $_GET['genres'] ?? [];
+$selected_genres = isset($_GET['genres']) && is_array($_GET['genres']) ? $_GET['genres'] : [];
 
-// Build the SQL query
+// Load all genres safely (no error if table doesn't exist)
+$genres = [];
+try {
+    $stmt = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_name');
+    $genres = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // No genres table yet — just continue without filter
+}
+
+// Build the search query
 $sql = 'SELECT title_id, title, type, cover_image, synopsis, author 
         FROM titles 
         WHERE is_approved = 1';
@@ -14,15 +23,18 @@ $sql = 'SELECT title_id, title, type, cover_image, synopsis, author
 $params = [];
 
 if ($query !== '') {
-    $sql .= ' AND (title LIKE :query OR author LIKE :query OR tags LIKE :query)';
+    $sql .= ' AND (LOWER(title) LIKE LOWER(:query) 
+                OR LOWER(author) LIKE LOWER(:query) 
+                OR LOWER(tags) LIKE LOWER(:query))';
     $params['query'] = "%$query%";
 }
 
 if (!empty($selected_genres)) {
     $placeholders = str_repeat('?,', count($selected_genres) - 1) . '?';
-    $sql .= " AND genre_ids REGEXP ?";
-    $regex = '(^|,)' . implode('($|,)', $selected_genres) . '($|,)';
-    $params[] = $regex;
+    $sql .= " AND (" . str_replace('?', 'FIND_IN_SET(?, genre_ids)', $placeholders) . ")";
+    foreach ($selected_genres as $g) {
+        $params[] = $g;
+    }
 }
 
 $sql .= ' ORDER BY created_at DESC';
@@ -30,9 +42,6 @@ $sql .= ' ORDER BY created_at DESC';
 $stmt = $db->prepare($sql);
 $stmt->execute($params);
 $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Load all genres for the filter
-$genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_name')->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -50,7 +59,7 @@ $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_nam
         .btn-primary { background:#1da1f2; border:none; }
         .btn-primary:hover { background:#1a91da; }
         .type-badge { position:absolute; top:10px; right:10px; background:rgba(0,0,0,0.7); color:white; padding:4px 10px; border-radius:20px; font-size:0.8rem; }
-        .genre-filter { background:white; padding:20px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+        .genre-filter { background:white; padding:20px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); position:sticky; top:20px; }
     </style>
 </head>
 <body>
@@ -60,7 +69,7 @@ $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_nam
         <h1 class="mb-4 text-center">Search Titles</h1>
 
         <div class="row">
-            <!-- Filter Sidebar -->
+            <!-- Sidebar Filter -->
             <div class="col-lg-3 mb-4">
                 <div class="genre-filter">
                     <form method="GET">
@@ -68,6 +77,8 @@ $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_nam
                             <input type="text" name="q" class="form-control" placeholder="Title, author, tags..." 
                                    value="<?php echo htmlspecialchars($query); ?>">
                         </div>
+
+                        <?php if (!empty($genres)): ?>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Filter by Genre</label>
                             <?php foreach ($genres as $g): ?>
@@ -80,7 +91,10 @@ $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_nam
                                 </div>
                             <?php endforeach; ?>
                         </div>
+                        <?php endif; ?>
+
                         <button type="submit" class="btn btn-primary w-100">Search</button>
+                        <a href="search.php" class="btn btn-outline-secondary w-100 mt-2">Clear</a>
                     </form>
                 </div>
             </div>
@@ -89,8 +103,9 @@ $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_nam
             <div class="col-lg-9">
                 <?php if (empty($results)): ?>
                     <div class="text-center py-5">
-                        <h3 class="text-muted">No titles found</h3>
-                        <a href="search.php" class="btn btn-primary mt-3">Clear filters</a>
+                        <h3 class="text-muted">
+                            <?php echo $query || !empty($selected_genres) ? 'No titles found' : 'Start searching!'; ?>
+                        </h3>
                     </div>
                 <?php else: ?>
                     <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">

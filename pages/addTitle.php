@@ -9,73 +9,65 @@ if (!isset($_SESSION['user'])) {
 
 $error = '';
 $success = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $title = $_POST['title'] ?? '';
-    $type = $_POST['type'] ?? '';
-    $synopsis = $_POST['synopsis'] ?? '';
-    $author = $_POST['author'] ?? '';
-    $genre = $_POST['genre'] ?? '';
-    $tags = $_POST['tags'] ?? '';
-    $external_link = $_POST['external_link'] ?? '';
+    $title = trim($_POST['title']);
+    $type = $_POST['type'];
+    $synopsis = trim($_POST['synopsis']);
+    $author = trim($_POST['author']);
+    $tags = trim($_POST['tags']);
+    $external_link = trim($_POST['external_link']);
     $volumes = !empty($_POST['volumes']) ? (int)$_POST['volumes'] : null;
     $chapters = !empty($_POST['chapters']) ? (int)$_POST['chapters'] : null;
-    $release_date = !empty($_POST['release_date']) ? $_POST['release_date'] : null;
+    $release_date = $_POST['release_date'] ?? null;
+    $genre_ids = isset($_POST['genres']) ? implode(',', array_map('intval', $_POST['genres'])) : '';
 
-    if (empty($title) || empty($type) || empty($synopsis) || empty($author) || empty($genre)) {
-        $error = 'Please fill in all required fields.';
-    } elseif (!in_array($type, ['LN', 'WN', 'VN'])) {
-        $error = 'Invalid title type.';
-    } elseif (!empty($external_link) && !filter_var($external_link, FILTER_VALIDATE_URL)) {
-        $error = 'Invalid URL format.';
+    if (empty($title) || empty($type) || empty($synopsis) || empty($author)) {
+        $error = 'Please fill all required fields.';
     } else {
         $cover_image = null;
         if (!empty($_FILES['cover_image']['name'])) {
-            $allowed_types = ['image/jpeg', 'image/png'];
-            $max_size = 2 * 1024 * 1024; // 2MB
-            $file_type = $_FILES['cover_image']['type'];
-            $file_size = $_FILES['cover_image']['size'];
-            $file_tmp = $_FILES['cover_image']['tmp_name'];
-            $file_ext = strtolower(pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION));
-            $file_name = uniqid('img_') . '.' . $file_ext;
-            $upload_path = '../images/' . $file_name;
-
-            if (!in_array($file_type, $allowed_types)) {
-                $error = 'Only JPG and PNG images are allowed.';
-            } elseif ($file_size > $max_size) {
-                $error = 'Image file size must be less than 2MB.';
-            } elseif (!move_uploaded_file($file_tmp, $upload_path)) {
-                $error = 'Failed to upload image.';
+            $allowed = ['image/jpeg', 'image/png'];
+            $max_size = 2 * 1024 * 1024;
+            if (in_array($_FILES['cover_image']['type'], $allowed) && $_FILES['cover_image']['size'] <= $max_size) {
+                $ext = pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION);
+                $filename = uniqid('img_') . '.' . $ext;
+                $path = '../images/' . $filename;
+                if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $path)) {
+                    $cover_image = 'images/' . $filename;
+                }
             } else {
-                $cover_image = 'images/' . $file_name;
+                $error = 'Invalid image (JPG/PNG only, max 2MB).';
             }
         }
 
         if (!$error) {
             try {
                 $stmt = $db->prepare('
-                    INSERT INTO titles (title, type, synopsis, author, genre, tags, cover_image, external_link, added_by, is_approved, volumes, chapters, release_date)
-                    VALUES (:title, :type, :synopsis, :author, :genre, :tags, :cover_image, :external_link, :added_by, 0, :volumes, :chapters, :release_date)
+                    INSERT INTO titles 
+                    (title, type, synopsis, author, tags, cover_image, external_link, 
+                     volumes, chapters, release_date, genre_ids, added_by, is_approved)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 ');
                 $stmt->execute([
-                    'title' => $title,
-                    'type' => $type,
-                    'synopsis' => $synopsis,
-                    'author' => $author,
-                    'genre' => $genre,
-                    'tags' => $tags,
-                    'cover_image' => $cover_image,
-                    'external_link' => $external_link,
-                    'added_by' => $_SESSION['user']['user_id'],
-                    'volumes' => $volumes,
-                    'chapters' => $chapters,
-                    'release_date' => $release_date
+                    $title, $type, $synopsis, $author, $tags, $cover_image,
+                    $external_link, $volumes, $chapters, $release_date, $genre_ids,
+                    $_SESSION['user']['user_id']
                 ]);
-                $success = 'Title submitted successfully! It will appear after admin approval.';
+                $success = 'Title submitted for approval!';
             } catch (PDOException $e) {
                 $error = 'Database error: ' . $e->getMessage();
             }
         }
     }
+}
+
+// Load genres
+$genres = [];
+try {
+    $genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_name')->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // No genres table yet
 }
 ?>
 <!DOCTYPE html>
@@ -83,89 +75,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ira-Yomi - Add Title</title>
+    <title>Add Title - Ira-Yomi</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        h1 { font-size: 1.6rem; font-weight: bold; }
-        .form-label strong { color: #333; }
-        .btn-primary { background-color: #1da1f2; border-color: #1da1f2; }
-        .btn-primary:hover { background-color: #1a91da; border-color: #1a91da; }
+        body { background:#f8f9fa; }
+        .btn-primary { background:#1da1f2; border:none; }
+        .btn-primary:hover { background:#1a91da; }
     </style>
 </head>
 <body>
     <?php include '../includes/header.php'; ?>
-    <div class="container mt-4">
-        <h1 class="mb-3">Add New Title</h1>
-        <nav aria-label="breadcrumb">
-            <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="../index.php">Home</a></li>
-                <li class="breadcrumb-item active" aria-current="page">Add Title</li>
-            </ol>
-        </nav>
-        <div class="row justify-content-center">
-            <div class="col-md-8">
-                <form method="POST" action="addTitle.php" enctype="multipart/form-data">
-                    <div class="mb-3">
-                        <label for="title" class="form-label"><strong>Title</strong></label>
-                        <input type="text" class="form-control" id="title" name="title" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="type" class="form-label"><strong>Type</strong></label>
-                        <select class="form-control" id="type" name="type" required>
-                            <option value="">Select Type</option>
-                            <option value="LN">Light Novel (LN)</option>
-                            <option value="WN">Web Novel (WN)</option>
-                            <option value="VN">Visual Novel (VN)</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="synopsis" class="form-label"><strong>Synopsis</strong></label>
-                        <textarea class="form-control" id="synopsis" name="synopsis" rows="5" required></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label for="author" class="form-label"><strong>Author</strong></label>
-                        <input type="text" class="form-control" id="author" name="author" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="genre" class="form-label"><strong>Genre</strong></label>
-                        <input type="text" class="form-control" id="genre" name="genre" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="tags" class="form-label"><strong>Tags (comma-separated)</strong></label>
-                        <input type="text" class="form-control" id="tags" name="tags">
-                    </div>
-                    <div class="mb-3">
-                        <label for="cover_image" class="form-label"><strong>Cover Image (JPG/PNG, max 2MB)</strong></label>
-                        <input type="file" class="form-control" id="cover_image" name="cover_image" accept="image/jpeg,image/png">
-                    </div>
-                    <div class="mb-3">
-                        <label for="external_link" class="form-label"><strong>External Link</strong></label>
-                        <input type="url" class="form-control" id="external_link" name="external_link">
-                    </div>
-                    <div class="mb-3">
-                        <label for="volumes" class="form-label"><strong>Volumes (for LN)</strong></label>
-                        <input type="number" class="form-control" id="volumes" name="volumes" min="0">
-                    </div>
-                    <div class="mb-3">
-                        <label for="chapters" class="form-label"><strong>Chapters (for WN)</strong></label>
-                        <input type="number" class="form-control" id="chapters" name="chapters" min="0">
-                    </div>
-                    <div class="mb-3">
-                        <label for="release_date" class="form-label"><strong>Release Date</strong></label>
-                        <input type="date" class="form-control" id="release_date" name="release_date">
-                    </div>
-                    <?php if ($error): ?>
-                        <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
-                    <?php endif; ?>
-                    <?php if ($success): ?>
-                        <div class="alert alert-success"><?php echo $success; ?></div>
-                    <?php endif; ?>
-                    <button type="submit" class="btn btn-primary w-100">Submit Title</button>
-                </form>
+    <div class="container mt-5">
+        <h2 class="mb-4">Submit New Title</h2>
+        <?php if ($success): ?><div class="alert alert-success"><?php echo $success; ?></div><?php endif; ?>
+        <?php if ($error): ?><div class="alert alert-danger"><?php echo $error; ?></div><?php endif; ?>
+
+        <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3"><label class="form-label">Title *</label>
+                <input type="text" name="title" class="form-control" required></div>
+
+            <div class="mb-3"><label class="form-label">Type *</label>
+                <select name="type" class="form-control" required>
+                    <option value="LN">Light Novel (LN)</option>
+                    <option value="WN">Web Novel (WN)</option>
+                    <option value="VN">Visual Novel (VN)</option>
+                </select></div>
+
+            <div class="mb-3"><label class="form-label">Synopsis *</label>
+                <textarea name="synopsis" class="form-control" rows="6" required></textarea></div>
+
+            <div class="mb-3"><label class="form-label">Author *</label>
+                <input type="text" name="author" class="form-control" required></div>
+
+            <?php if (!empty($genres)): ?>
+            <div class="mb-3">
+                <label class="form-label">Genres (select all that apply)</label>
+                <div class="row">
+                    <?php foreach ($genres as $g): ?>
+                        <div class="col-md-4">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="genres[]" value="<?php echo $g['genre_id']; ?>" id="g<?php echo $g['genre_id']; ?>">
+                                <label class="form-check-label" for="g<?php echo $g['genre_id']; ?>">
+                                    <?php echo htmlspecialchars($g['genre_name']); ?>
+                                </label>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
             </div>
-        </div>
+            <?php endif; ?>
+
+            <div class="mb-3"><label class="form-label">Tags (comma-separated, optional)</label>
+                <input type="text" name="tags" class="form-control" placeholder="e.g. overpowered MC, reincarnation"></div>
+
+            <div class="mb-3"><label class="form-label">Cover Image (JPG/PNG, max 2MB)</label>
+                <input type="file" name="cover_image" class="form-control" accept="image/jpeg,image/png"></div>
+
+            <div class="mb-3"><label class="form-label">External Link</label>
+                <input type="url" name="external_link" class="form-control"></div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3"><label class="form-label">Volumes (LN)</label>
+                    <input type="number" name="volumes" class="form-control" min="0"></div>
+                <div class="col-md-6 mb-3"><label class="form-label">Chapters (WN)</label>
+                    <input type="number" name="chapters" class="form-control" min="0"></div>
+            </div>
+
+            <div class="mb-3"><label class="form-label">Release Date</label>
+                <input type="date" name="release_date" class="form-control"></div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100">Submit for Approval</button>
+        </form>
     </div>
     <?php include '../includes/footer.php'; ?>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
