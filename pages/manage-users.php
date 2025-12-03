@@ -1,9 +1,9 @@
 <?php
 session_start();
-require '../../includes/config.php';
+require '../includes/config.php';
 
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
-    header('Location: ../../index.php');
+    header('Location: ../index.php');
     exit;
 }
 
@@ -63,7 +63,7 @@ $users = $db->query('
     </style>
 </head>
 <body>
-    <?php include '../../includes/header.php'; ?>
+    <?php include '../includes/header.php'; ?>
 
     <div class="container mt-5">
         <h1 class="mb-4">Manage Users</h1>
@@ -147,7 +147,7 @@ $users = $db->query('
         </div>
     </div>
 
-    <?php include '../../includes/footer.php'; ?>
+    <?php include '../includes/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

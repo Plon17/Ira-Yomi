@@ -139,23 +139,27 @@ if ($title_id <= 0) {
                         <?php if ($title['release_date'] && $title['release_date'] !== '0000-00-00'): ?>
                             <li><strong>Release Date:</strong> <?php echo date('F j, Y', strtotime($title['release_date'])); ?></li>
                         <?php endif; ?>
+
+                        <!-- FIXED GENRES SECTION -->
                         <?php if (!empty($title['genre_ids'])): ?>
                             <li><strong>Genres:</strong> 
                                 <?php
-                                $genre_ids = explode(',', $title['genre_ids']);
-                                $names = [];
-                                foreach ($genre_ids as $gid) {
-                                    $gid = trim($gid);
-                                    if ($gid) {
-                                        $g = $db->prepare('SELECT genre_name FROM genres WHERE genre_id = ?')->execute([$gid]) ?
-                                            $db->query('SELECT genre_name FROM genres WHERE genre_id = ?')->fetchColumn() : '';
-                                        if ($g) $names[] = htmlspecialchars($g);
-                                    }
+                                $genre_ids = array_filter(array_map('trim', explode(',', $title['genre_ids'])));
+                                if (!empty($genre_ids)) {
+                                    $placeholders = str_repeat('?,', count($genre_ids) - 1) . '?';
+                                    $stmt = $db->prepare("SELECT genre_name FROM genres WHERE genre_id IN ($placeholders) ORDER BY genre_name");
+                                    $stmt->execute($genre_ids);
+                                    $genre_names = $stmt->fetchAll(PDO::FETCH_COLUMN);
+                                    echo htmlspecialchars(implode(', ', $genre_names));
+                                } else {
+                                    echo 'None';
                                 }
-                                echo $names ? implode(', ', $names) : 'None';
                                 ?>
                             </li>
+                        <?php else: ?>
+                            <li><strong>Genres:</strong> None</li>
                         <?php endif; ?>
+
                         <?php if ($title['tags']): ?>
                             <li><strong>Tags:</strong> <?php echo htmlspecialchars($title['tags']); ?></li>
                         <?php endif; ?>

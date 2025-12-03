@@ -1,9 +1,9 @@
 <?php
 session_start();
-require '../../includes/config.php';
+require '../includes/config.php';
 
 if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
-    header('Location: ../../index.php');
+    header('Location: ../index.php');
     exit;
 }
 
@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $file_tmp = $_FILES['cover_image']['tmp_name'];
                         $file_ext = strtolower(pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION));
                         $file_name = uniqid('img_') . '.' . $file_ext;
-                        $upload_path = '../../images/' . $file_name;
+                        $upload_path = '../images/' . $file_name;
 
                         if (!in_array($file_type, $allowed_types)) {
                             $error = 'Only JPG and PNG images are allowed.';
@@ -129,12 +129,12 @@ try {
     </style>
 </head>
 <body>
-    <?php include '../../includes/header.php'; ?>
+    <?php include '../includes/header.php'; ?>
     <div class="container mt-4">
         <h1 class="mb-3">Manage Titles</h1>
         <nav aria-label="breadcrumb">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="../../index.php">Home</a></li>
+                <li class="breadcrumb-item"><a href="../index.php">Home</a></li>
                 <li class="breadcrumb-item"><a href="dashboard.php">Admin</a></li>
                 <li class="breadcrumb-item active" aria-current="page">Manage Titles</li>
             </ol>
@@ -249,7 +249,7 @@ try {
             </div>
         </div>
     </div>
-    <?php include '../../includes/footer.php'; ?>
+    <?php include '../includes/footer.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

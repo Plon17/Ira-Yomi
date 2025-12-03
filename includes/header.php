@@ -35,10 +35,10 @@
                                     Admin
                                 </a>
                                 <ul class="dropdown-menu" aria-labelledby="adminDropdown">
-                                    <li><a class="dropdown-item" href="../pages/admin/dashboard.php">Dashboard</a></li>
-                                    <li><a class="dropdown-item" href="../pages/admin/manage-titles.php">Manage Titles</a></li>
-                                    <li><a class="dropdown-item" href="../pages/admin/manage-users.php">Manage Users</a></li>
-                                    <li><a class="dropdown-item" href="../pages/admin/manage-reviews.php">Manage Reviews</a></li>
+                                    <li><a class="dropdown-item" href="../pages/dashboard.php">Dashboard</a></li>
+                                    <li><a class="dropdown-item" href="../pages/manage-titles.php">Manage Titles</a></li>
+                                    <li><a class="dropdown-item" href="../pages/manage-users.php">Manage Users</a></li>
+                                    <li><a class="dropdown-item" href="../pages/manage-reviews.php">Manage Reviews</a></li>
                                 </ul>
                             </li>
                         <?php endif; ?>
