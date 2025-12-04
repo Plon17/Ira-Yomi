@@ -29,6 +29,7 @@ if (!$thread) {
 // Handle actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($user_id) {
+        // New comment
         if (isset($_POST['comment'])) {
             $comment = trim($_POST['comment']);
             if ($comment) {
@@ -37,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // Like / Dislike
         if (isset($_POST['comment_id']) && isset($_POST['vote'])) {
             $cid = (int)$_POST['comment_id'];
             $vote = $_POST['vote'];
@@ -44,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare("UPDATE forum_comments SET $field = $field + 1 WHERE comment_id = ?")->execute([$cid]);
         }
 
+        // REPORT — NOW WORKS
         if (isset($_POST['report_comment'])) {
             $cid = (int)$_POST['report_comment'];
             $check = $db->prepare('SELECT 1 FROM comment_reports WHERE comment_id = ? AND user_id = ?');
@@ -55,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Admin delete
     if ($is_admin) {
         if (isset($_POST['delete_comment'])) {
             $cid = (int)$_POST['delete_comment'];
@@ -68,9 +72,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
     }
+    header("Location: thread.php?id=$thread_id");
+    exit;
 }
 
-// Load comments — now uses correct column names
+// Load comments with report count
 $comments = $db->prepare('
     SELECT fc.*, u.username, u.profile_pic,
            (SELECT COUNT(*) FROM comment_reports WHERE comment_id = fc.comment_id) as report_count
@@ -125,11 +131,11 @@ $comments_list = $comments->fetchAll();
 
         <?php if ($user_id): ?>
         <form method="POST" class="mb-4 ajax-form" id="new-comment-form">
-            <textarea name="comment" class="form-control" rows="3" placeholder="Write your comment..." required></textarea>
-            <button type="submit" class="btn btn-primary mt-2">Post Comment</button>
+            <textarea name="comment" class="form-control" rows="3" placeholder="Write a reply..." required></textarea>
+            <button type="submit" class="btn btn-primary mt-2">Post Reply</button>
         </form>
         <?php else: ?>
-        <p><a href="login.php">Log in</a> to comment.</p>
+        <p><a href="login.php">Log in</a> to reply.</p>
         <?php endif; ?>
 
         <div id="comments-container">
@@ -139,7 +145,8 @@ $comments_list = $comments->fetchAll();
                     <div class="flex-grow-1">
                         <strong><?php echo htmlspecialchars($c['username']); ?></strong>
                         <small class="text-muted"><?php echo date('M j, Y g:i A', strtotime($c['created_at'])); ?></small>
-                        <?php if ($is_admin && ($c['report_count'] ?? 0) > 0): ?>
+                        <!-- REPORT BADGE FOR EVERYONE -->
+                        <?php if ($c['report_count'] > 0): ?>
                             <span class="badge bg-danger ms-2"><?php echo $c['report_count']; ?> report<?php echo $c['report_count'] > 1 ? 's' : ''; ?></span>
                         <?php endif; ?>
                         <p class="mb-1"><?php echo nl2br(htmlspecialchars($c['comment'])); ?></p>
@@ -148,14 +155,14 @@ $comments_list = $comments->fetchAll();
                             <form method="POST" class="d-inline ajax-form">
                                 <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
                                 <input type="hidden" name="vote" value="like">
-                                <button type="submit" class="btn btn-link p-0 text-success">👍 <?php echo $c['likes']; ?></button>
+                                <button type="submit" class="btn btn-link p-0 text-success">Like <?php echo $c['likes']; ?></button>
                             </form>
 
                             <!-- Dislike -->
                             <form method="POST" class="d-inline ms-3 ajax-form">
                                 <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
                                 <input type="hidden" name="vote" value="dislike">
-                                <button type="submit" class="btn btn-link p-0 text-danger">👎 <?php echo $c['dislikes']; ?></button>
+                                <button type="submit" class="btn btn-link p-0 text-danger">Dislike <?php echo $c['dislikes']; ?></button>
                             </form>
 
                             <!-- Report -->
@@ -164,12 +171,12 @@ $comments_list = $comments->fetchAll();
                                 <button type="submit" class="btn btn-link p-0 report-btn">Report</button>
                             </form>
 
-                            <!-- Delete (admin) -->
+                            <!-- Admin Delete -->
                             <?php if ($is_admin): ?>
-                                <form method="POST" class="d-inline ms-3 ajax-form">
-                                    <input type="hidden" name="delete_comment" value="<?php echo $c['comment_id']; ?>">
-                                    <button type="submit" class="btn btn-link p-0 text-danger">Delete</button>
-                                </form>
+                            <form method="POST" class="d-inline ms-3 ajax-form">
+                                <input type="hidden" name="delete_comment" value="<?php echo $c['comment_id']; ?>">
+                                <button type="submit" class="btn btn-link p-0 text-danger">Delete</button>
+                            </form>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -177,16 +184,15 @@ $comments_list = $comments->fetchAll();
             <?php endforeach; ?>
         </div>
     </div>
+
     <?php include '../includes/footer.php'; ?>
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
     $(document).ready(function() {
-        $('#comments-container').on('submit', '.ajax-form', function(e) {
+        $(document).on('submit', '.ajax-form', function(e) {
             e.preventDefault();
-
             let form = this;
-            let scrollPos = $(window).scrollTop();
-
             let formData = new FormData(form);
 
             $.ajax({
@@ -196,10 +202,7 @@ $comments_list = $comments->fetchAll();
                 processData: false,
                 contentType: false,
                 success: function() {
-                    // reload only comments section
-                    $('#comments-container').load(window.location.href + ' #comments-container > *', function() {
-                        $(window).scrollTop(scrollPos); // restore scroll
-                    });
+                    $('#comments-container').load(window.location.href + ' #comments-container > *');
                 }
             });
         });

@@ -16,18 +16,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($report_id > 0) {
         try {
-            $report = $db->prepare('SELECT cr.*, c.user_id as comment_user_id FROM comment_reports cr JOIN comments c ON cr.comment_id = c.comment_id WHERE cr.id = ?');
+            $report = $db->prepare("
+                SELECT 
+                    cr.*,
+                    COALESCE(c.user_id, fc.user_id) AS comment_user_id
+                FROM comment_reports cr
+                LEFT JOIN comments c ON cr.comment_id = c.comment_id AND cr.source_type = 'novel'
+                LEFT JOIN forum_comments fc ON cr.comment_id = fc.comment_id AND cr.source_type = 'forum'
+                WHERE cr.id = ?
+            ");
             $report->execute([$report_id]);
             $r = $report->fetch();
 
             if ($r) {
                 if ($action === 'delete_comment') {
-                    $db->prepare('DELETE FROM comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    if ($r['source_type'] === 'novel') {
+                        $db->prepare('DELETE FROM comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    } elseif ($r['source_type'] === 'forum') {
+                        $db->prepare('DELETE FROM forum_comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    }
                     $db->prepare('DELETE FROM comment_reports WHERE comment_id = ?')->execute([$r['comment_id']]);
                     $success = 'Comment deleted.';
                 } elseif ($action === 'ban_user') {
                     $db->prepare('UPDATE users SET is_banned = 1 WHERE user_id = ?')->execute([$r['comment_user_id']]);
-                    $db->prepare('DELETE FROM comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    if ($r['source_type'] === 'novel') {
+                        $db->prepare('DELETE FROM comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    } elseif ($r['source_type'] === 'forum') {
+                        $db->prepare('DELETE FROM forum_comments WHERE comment_id = ?')->execute([$r['comment_id']]);
+                    }
                     $db->prepare('DELETE FROM comment_reports WHERE comment_id = ?')->execute([$r['comment_id']]);
                     $success = 'User banned and comment deleted.';
                 } elseif ($action === 'ignore') {

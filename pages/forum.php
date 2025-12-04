@@ -90,12 +90,6 @@ $threads = $stmt->fetchAll();
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <h5><a href="thread.php?id=<?php echo $t['thread_id']; ?>" class="text-decoration-none"><?php echo htmlspecialchars($t['title']); ?></a>
-                                <?php if (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'admin'): ?>
-                                    <form method="POST" class="d-inline ms-3">
-                                        <input type="hidden" name="delete_thread" value="<?php echo $t['thread_id']; ?>">
-                                        <button type="submit" class="btn btn-link text-danger p-0" onclick="return confirm('Delete this thread and all replies?')">Delete</button>
-                                    </form>
-                                <?php endif; ?>
                             </h5>
                             <small class="text-muted">by <?php echo htmlspecialchars($t['username']); ?> • <?php echo date('M j, Y g:i A', strtotime($t['created_at'])); ?></small>
                         </div>
