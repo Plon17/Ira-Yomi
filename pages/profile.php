@@ -277,7 +277,19 @@ $submitted_titles = $submitted->fetchAll();
                 backgroundColor: ['#1da1f2','#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#c9cbcf','#ff9f40']
             }]
         },
-        options: { responsive:true, plugins:{legend:{position:'right'}} }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false, // allows the chart to fill container height
+            cutout: '30%',              // reduce the hole size to make the chart bigger
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            },
+            layout: {
+                padding: 10 // optional, slightly increase the chart size
+            }
+        }
     });
     </script>
     <?php endif; ?>

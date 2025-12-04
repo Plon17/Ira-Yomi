@@ -100,5 +100,6 @@ $recent_comments = $db->query('SELECT c.comment, u.username, t.title, c.created_
             <a href="manage-reports.php" class="btn btn-danger btn-lg ms-3">Manage Reports (<?php echo $pending_reports; ?>)</a>
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

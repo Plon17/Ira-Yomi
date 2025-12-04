@@ -5,6 +5,7 @@ require '../includes/config.php';
 // Get search term and selected genres SAFELY
 $query = trim($_GET['q'] ?? '');
 $selected_genres = isset($_GET['genres']) && is_array($_GET['genres']) ? $_GET['genres'] : [];
+$selected_types = isset($_GET['types']) && is_array($_GET['types']) ? $_GET['types'] : [];
 
 // Load all genres safely (no error if table doesn't exist)
 $genres = [];
@@ -35,6 +36,12 @@ if (!empty($selected_genres)) {
     foreach ($selected_genres as $g) {
         $params[] = $g;
     }
+}
+
+if (!empty($selected_types)) {
+    $type_placeholders = str_repeat('?,', count($selected_types) - 1) . '?';
+    $sql .= " AND type IN ($type_placeholders)";
+    foreach ($selected_types as $t) $params[] = $t;
 }
 
 $sql .= ' ORDER BY created_at DESC';
@@ -78,6 +85,27 @@ $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                    value="<?php echo htmlspecialchars($query); ?>">
                         </div>
 
+                        <!-- TYPE FILTER -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Filter by Type</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="types[]" value="LN" id="typeLN"
+                                       <?php echo in_array('LN', $selected_types) ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="typeLN">Light Novel (LN)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="types[]" value="WN" id="typeWN"
+                                       <?php echo in_array('WN', $selected_types) ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="typeWN">Web Novel (WN)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="types[]" value="VN" id="typeVN"
+                                       <?php echo in_array('VN', $selected_types) ? 'checked' : ''; ?>>
+                                <label class="form-check-label" for="typeVN">Visual Novel (VN)</label>
+                            </div>
+                        </div>
+
+                        <!-- GENRE FILTER -->
                         <?php if (!empty($genres)): ?>
                         <div class="mb-3">
                             <label class="form-label fw-bold">Filter by Genre</label>
