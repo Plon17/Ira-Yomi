@@ -42,16 +42,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Load reports
-$reports = $db->query('
-    SELECT cr.id, cr.comment_id, cr.user_id as reporter_id, c.comment, c.created_at as comment_date,
-           u1.username as reporter, u2.username as commenter, t.title_id, t.title
+$reports = $db->query("
+    SELECT 
+        cr.id,
+        cr.comment_id,
+        cr.user_id AS reporter_id,
+
+        u1.username AS reporter,
+        u2.username AS commenter,
+
+        -- Title data
+        t.title_id,
+        t.title,
+
+        -- Forum data
+        ft.thread_id,
+        ft.title AS thread_title,
+
+        CASE cr.source_type
+            WHEN 'novel' THEN 'novel'
+            WHEN 'forum' THEN 'forum'
+        END AS source_type,
+
+        COALESCE(c.comment, fc.comment) AS comment,
+        COALESCE(c.created_at, fc.created_at) AS comment_date
+
     FROM comment_reports cr
-    JOIN comments c ON cr.comment_id = c.comment_id
+    LEFT JOIN comments c ON cr.comment_id = c.comment_id AND cr.source_type='novel'
+    LEFT JOIN titles t ON c.title_id = t.title_id
+    LEFT JOIN forum_comments fc ON cr.comment_id = fc.comment_id AND cr.source_type='forum'
+    LEFT JOIN forum_threads ft ON fc.thread_id = ft.thread_id
+
     JOIN users u1 ON cr.user_id = u1.user_id
-    JOIN users u2 ON c.user_id = u2.user_id
-    JOIN titles t ON c.title_id = t.title_id
+    LEFT JOIN users u2 ON 
+        CASE cr.source_type 
+            WHEN 'novel' THEN c.user_id
+            WHEN 'forum' THEN fc.user_id
+        END = u2.user_id
+
     ORDER BY cr.created_at DESC
-')->fetchAll();
+")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -86,28 +116,62 @@ $reports = $db->query('
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-8">
-                                <p><strong>Reported by:</strong> <?php echo htmlspecialchars($r['reporter']); ?></p>
-                                <p><strong>Comment by:</strong> <?php echo htmlspecialchars($r['commenter']); ?> on 
-                                    <a href="title.php?id=<?php echo $r['title_id']; ?>"><?php echo htmlspecialchars($r['title']); ?></a>
+                                <p><strong>Reported by:</strong> <?= htmlspecialchars($r['reporter']) ?></p>
+
+                                <p>
+                                    <strong>Comment by:</strong> <?= htmlspecialchars($r['commenter']) ?> on 
+                                    <?php if ($r['source_type'] === 'novel'): ?>
+                                        <a href="title.php?id=<?= $r['title_id'] ?>">
+                                            <?= htmlspecialchars($r['title']) ?>
+                                        </a>
+                                    <?php else: ?>
+                                        <a href="thread.php?id=<?= $r['thread_id'] ?>">
+                                            <?= htmlspecialchars($r['thread_title']) ?>
+                                        </a>
+                                    <?php endif; ?>
                                 </p>
-                                <p class="border p-3 bg-light rounded">"<?php echo htmlspecialchars($r['comment']); ?>"</p>
-                                <small class="text-muted">Reported on <?php echo date('M j, Y g:i A', strtotime($r['comment_date'])); ?></small>
+
+                                <p class="border p-3 bg-light rounded">
+                                    "<?= htmlspecialchars($r['comment']) ?>"
+                                </p>
+
+                                <small class="text-muted">
+                                    Reported on <?= date('M j, Y g:i A', strtotime($r['comment_date'])) ?>
+                                </small>
                             </div>
+
                             <div class="col-md-4 text-end">
                                 <form method="POST" class="d-inline">
-                                    <input type="hidden" name="report_id" value="<?php echo $r['id']; ?>">
-                                    <button type="submit" name="action" value="delete_comment" class="btn btn-danger btn-sm">Delete Comment</button>
+                                    <input type="hidden" name="report_id" value="<?= $r['id'] ?>">
+                                    <button type="submit" name="action" value="delete_comment"
+                                            class="btn btn-danger btn-sm">Delete Comment</button>
                                 </form>
+
                                 <form method="POST" class="d-inline ms-2">
-                                    <input type="hidden" name="report_id" value="<?php echo $r['id']; ?>">
-                                    <button type="submit" name="action" value="ban_user" class="btn btn-dark btn-sm" onclick="return confirm('Ban user and delete comment?')">Ban User</button>
+                                    <input type="hidden" name="report_id" value="<?= $r['id'] ?>">
+                                    <button type="submit" name="action" value="ban_user"
+                                            class="btn btn-dark btn-sm"
+                                            onclick="return confirm('Ban user and delete comment?')">
+                                        Ban User
+                                    </button>
                                 </form>
+
                                 <form method="POST" class="d-inline ms-2">
-                                    <input type="hidden" name="report_id" value="<?php echo $r['id']; ?>">
-                                    <button type="submit" name="action" value="ignore" class="btn btn-secondary btn-sm">Ignore</button>
+                                    <input type="hidden" name="report_id" value="<?= $r['id'] ?>">
+                                    <button type="submit" name="action" value="ignore"
+                                            class="btn btn-secondary btn-sm">Ignore</button>
                                 </form>
+
                                 <div class="mt-2">
-                                    <a href="title.php?id=<?php echo $r['title_id']; ?>&comment_id=<?php echo $r['comment_id']; ?>#comment-<?php echo $r['comment_id']; ?>">Go to Comment</a>
+                                    <?php if ($r['source_type'] === 'novel'): ?>
+                                        <a href="title.php?id=<?= $r['title_id'] ?>&comment_id=<?= $r['comment_id'] ?>#comment-<?= $r['comment_id'] ?>">
+                                            Go to Comment
+                                        </a>
+                                    <?php else: ?>
+                                        <a href="thread.php?id=<?= $r['thread_id'] ?>&comment_id=<?= $r['comment_id'] ?>#comment-<?= $r['comment_id'] ?>">
+                                            Go to Comment
+                                        </a>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>

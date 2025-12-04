@@ -92,7 +92,9 @@ if ($title_id <= 0) {
                 $check = $db->prepare('SELECT 1 FROM comment_reports WHERE comment_id = ? AND user_id = ?');
                 $check->execute([$comment_id, $user_id]);
                 if ($check->rowCount() == 0) {
-                    $db->prepare('INSERT INTO comment_reports (comment_id, user_id) VALUES (?, ?)')->execute([$comment_id, $user_id]);
+                    // Insert with source_type
+                    $db->prepare('INSERT INTO comment_reports (comment_id, user_id, source_type) VALUES (?, ?, "novel")')
+                    ->execute([$comment_id, $user_id]);
                 }
             }
             header("Location: title.php?id=$title_id");
@@ -291,13 +293,13 @@ if ($title_id <= 0) {
                                     <form method="POST" class="d-inline ajax-form">
                                         <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
                                         <input type="hidden" name="vote" value="like">
-                                        <button type="submit" class="btn btn-link p-0 text-success">↑ <?php echo $c['likes']; ?></button>
+                                        <button type="submit" class="btn btn-link p-0 text-success">👍 <?php echo $c['likes']; ?></button>
                                     </form>
                                     <!-- Dislike -->
                                     <form method="POST" class="d-inline ms-3 ajax-form">
                                         <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
                                         <input type="hidden" name="vote" value="dislike">
-                                        <button type="submit" class="btn btn-link p-0 text-danger">↓ <?php echo $c['dislikes']; ?></button>
+                                        <button type="submit" class="btn btn-link p-0 text-danger">👎 <?php echo $c['dislikes']; ?></button>
                                     </form>
                                     <!-- Report -->
                                     <?php if ($user_id): ?>
