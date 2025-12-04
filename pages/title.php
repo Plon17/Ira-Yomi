@@ -4,6 +4,7 @@ require '../includes/config.php';
 
 $title_id = isset($_GET['id']) && is_numeric($_GET['id']) ? (int)$_GET['id'] : 0;
 $user_id = $_SESSION['user']['user_id'] ?? 0;
+$target_comment = isset($_GET['comment_id']) ? (int)$_GET['comment_id'] : 0;
 
 if ($title_id <= 0) {
     $error = 'Invalid title ID.';
@@ -82,6 +83,22 @@ if ($title_id <= 0) {
             exit;
         }
 
+        // Handle comment report
+        if ($user_id && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['report_comment'])) {
+            $comment_id = (int)$_POST['report_comment'];
+            $stmt = $db->prepare('SELECT 1 FROM comments WHERE comment_id = ? AND title_id = ?');
+            $stmt->execute([$comment_id, $title_id]);
+            if ($stmt->rowCount()) {
+                $check = $db->prepare('SELECT 1 FROM comment_reports WHERE comment_id = ? AND user_id = ?');
+                $check->execute([$comment_id, $user_id]);
+                if ($check->rowCount() == 0) {
+                    $db->prepare('INSERT INTO comment_reports (comment_id, user_id) VALUES (?, ?)')->execute([$comment_id, $user_id]);
+                }
+            }
+            header("Location: title.php?id=$title_id");
+            exit;
+        }
+
         // Handle comment post
         if ($user_id && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['comment'])) {
             $comment = trim($_POST['comment']);
@@ -103,7 +120,8 @@ if ($title_id <= 0) {
 
         // Load comments ordered by likes
         $comments = $db->prepare('
-            SELECT c.*, u.username, u.profile_pic 
+            SELECT c.*, u.username, u.profile_pic,
+                   (SELECT COUNT(*) FROM comment_reports WHERE comment_id = c.comment_id) as report_count
             FROM comments c 
             JOIN users u ON c.user_id = u.user_id 
             WHERE c.title_id = ? 
@@ -243,48 +261,94 @@ if ($title_id <= 0) {
             </div>
 
             <!-- Comments -->
-            <div class="mt-5 p-4 bg-white rounded shadow">
-                <h3>Comments (<?php echo count($comments_list); ?>)</h3>
-                <?php if ($user_id): ?>
-                    <form method="POST" class="mb-4">
-                        <textarea name="comment" class="form-control" rows="3" placeholder="Write your comment..." required></textarea>
-                        <button type="submit" class="btn btn-primary mt-2">Post Comment</button>
-                    </form>
-                <?php else: ?>
-                    <p><a href="login.php">Log in</a> to comment.</p>
-                <?php endif; ?>
+            <div id="comments-container">
+                <div class="mt-5 p-4 bg-white rounded shadow">
+                    <h3>Comments (<?php echo count($comments_list); ?>)</h3>
 
-                <?php foreach ($comments_list as $c): ?>
-                    <div class="d-flex mb-3">
-                        <div class="me-3">
-                            <img src="../<?php echo $c['profile_pic'] ?? 'images/default-avatar.png'; ?>" class="profile-img" alt="<?php echo htmlspecialchars($c['username']); ?>">
-                        </div>
-                        <div class="flex-grow-1">
-                            <strong><?php echo htmlspecialchars($c['username']); ?></strong>
-                            <small class="text-muted"><?php echo date('M j, Y g:i A', strtotime($c['created_at'])); ?></small>
-                            <p class="mb-1"><?php echo nl2br(htmlspecialchars($c['comment'])); ?></p>
-                            <div class="comment-actions">
-                                <form method="POST" class="d-inline">
-                                    <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
-                                    <button type="submit" name="vote" value="like" class="btn btn-link p-0 text-success">👍 <?php echo $c['likes']; ?></button>
-                                </form>
-                                <form method="POST" class="d-inline ms-3">
-                                    <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
-                                    <button type="submit" name="vote" value="dislike" class="btn btn-link p-0 text-danger">👎 <?php echo $c['dislikes']; ?></button>
-                                </form>
-                                <?php if ($is_admin): ?>
-                                    <form method="POST" class="d-inline ms-3">
-                                        <input type="hidden" name="delete_comment" value="<?php echo $c['comment_id']; ?>">
-                                        <button type="submit" class="btn btn-link p-0 text-danger">Delete</button>
-                                    </form>
+                    <?php if ($user_id): ?>
+                        <form method="POST" class="mb-4 ajax-form" id="new-comment-form">
+                            <textarea name="comment" class="form-control" rows="3" placeholder="Write your comment..." required></textarea>
+                            <button type="submit" class="btn btn-primary mt-2">Post Comment</button>
+                        </form>
+                    <?php else: ?>
+                        <p><a href="login.php">Log in</a> to comment.</p>
+                    <?php endif; ?>
+
+                    <?php foreach ($comments_list as $c): ?>
+                        <div class="d-flex mb-3" id="comment-<?php echo $c['comment_id']; ?>">
+                            <div class="me-3">
+                                <img src="../<?php echo $c['profile_pic'] ?? 'images/default-avatar.png'; ?>" class="profile-img" alt="<?php echo htmlspecialchars($c['username']); ?>">
+                            </div>
+                            <div class="flex-grow-1">
+                                <strong><?php echo htmlspecialchars($c['username']); ?></strong>
+                                <small class="text-muted"><?php echo date('M j, Y g:i A', strtotime($c['created_at'])); ?></small>
+                                <?php if ($is_admin && ($c['report_count'] ?? 0) > 0): ?>
+                                    <span class="badge bg-danger ms-2"><?php echo $c['report_count']; ?> report<?php echo $c['report_count'] > 1 ? 's' : ''; ?></span>
                                 <?php endif; ?>
+                                <p class="mb-1"><?php echo nl2br(htmlspecialchars($c['comment'])); ?></p>
+                                <div class="comment-actions">
+                                    <!-- Like -->
+                                    <form method="POST" class="d-inline ajax-form">
+                                        <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
+                                        <input type="hidden" name="vote" value="like">
+                                        <button type="submit" class="btn btn-link p-0 text-success">↑ <?php echo $c['likes']; ?></button>
+                                    </form>
+                                    <!-- Dislike -->
+                                    <form method="POST" class="d-inline ms-3 ajax-form">
+                                        <input type="hidden" name="comment_id" value="<?php echo $c['comment_id']; ?>">
+                                        <input type="hidden" name="vote" value="dislike">
+                                        <button type="submit" class="btn btn-link p-0 text-danger">↓ <?php echo $c['dislikes']; ?></button>
+                                    </form>
+                                    <!-- Report -->
+                                    <?php if ($user_id): ?>
+                                        <form method="POST" class="d-inline ms-3 ajax-form">
+                                            <input type="hidden" name="report_comment" value="<?php echo $c['comment_id']; ?>">
+                                            <button type="submit" class="btn btn-link p-0 report-btn">Report</button>
+                                        </form>
+                                    <?php endif; ?>
+                                    <!-- Delete (admin) -->
+                                    <?php if ($is_admin): ?>
+                                        <form method="POST" class="d-inline ms-3 ajax-form">
+                                            <input type="hidden" name="delete_comment" value="<?php echo $c['comment_id']; ?>">
+                                            <button type="submit" class="btn btn-link p-0 text-danger">Delete</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                <?php endforeach; ?>
+                    <?php endforeach; ?>
+                </div>
             </div>
         <?php endif; ?>
     </div>
     <?php include '../includes/footer.php'; ?>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+    $(document).ready(function() {
+        $('#comments-container').on('submit', '.ajax-form', function(e) {
+            e.preventDefault();
+
+            let form = this;
+            let scrollPos = $(window).scrollTop();
+
+            let formData = new FormData(form);
+
+            $.ajax({
+                url: window.location.href,
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function() {
+                    // reload only comments section
+                    $('#comments-container').load(window.location.href + ' #comments-container > *', function() {
+                        $(window).scrollTop(scrollPos); // restore scroll
+                    });
+                }
+            });
+        });
+    });
+    </script>
 </body>
 </html>

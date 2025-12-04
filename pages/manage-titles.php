@@ -29,84 +29,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->execute(['title_id' => $title_id]);
                 $success = 'Title deleted successfully.';
             } elseif ($action === 'edit') {
-                $title = $_POST['title'] ?? '';
-                $type = $_POST['type'] ?? '';
-                $synopsis = $_POST['synopsis'] ?? '';
-                $author = $_POST['author'] ?? '';
-                $genre = $_POST['genre'] ?? '';
-                $tags = $_POST['tags'] ?? '';
-                $external_link = $_POST['external_link'] ?? '';
-                $volumes = !empty($_POST['volumes']) ? (int)$_POST['volumes'] : null;
-                $chapters = !empty($_POST['chapters']) ? (int)$_POST['chapters'] : null;
-                $release_date = !empty($_POST['release_date']) ? $_POST['release_date'] : null;
+                // Get current title data first (so we can keep old values if not changed)
+                $current = $db->prepare('SELECT * FROM titles WHERE title_id = ?');
+                $current->execute([$title_id]);
+                $old = $current->fetch();
 
-                if (empty($title) || empty($type) || empty($synopsis) || empty($author) || empty($genre)) {
-                    $error = 'Please fill in all required fields.';
-                } elseif (!in_array($type, ['LN', 'WN', 'VN'])) {
-                    $error = 'Invalid title type.';
-                } elseif (!empty($external_link) && !filter_var($external_link, FILTER_VALIDATE_URL)) {
-                    $error = 'Invalid URL format.';
+                $title = trim($_POST['title'] ?? $old['title']);
+                $type = $_POST['type'] ?? $old['type'];
+                $synopsis = trim($_POST['synopsis'] ?? $old['synopsis']);
+                $author = trim($_POST['author'] ?? $old['author']);
+                $tags = trim($_POST['tags'] ?? $old['tags']);
+                $external_link = trim($_POST['external_link'] ?? $old['external_link']);
+                $volumes = $_POST['volumes'] !== '' ? (int)$_POST['volumes'] : $old['volumes'];
+                $chapters = $_POST['chapters'] !== '' ? (int)$_POST['chapters'] : $old['chapters'];
+                $release_date = $_POST['release_date'] ?: $old['release_date'];
+
+                // Handle genres (multi-checkbox)
+                $genre_ids = '';
+                if (isset($_POST['genres']) && is_array($_POST['genres'])) {
+                    $cleaned = array_map('intval', $_POST['genres']);
+                    $genre_ids = implode(',', $cleaned);
                 } else {
-                    $cover_image = $_POST['existing_cover_image'] ?? null;
-                    if (!empty($_FILES['cover_image']['name'])) {
-                        $allowed_types = ['image/jpeg', 'image/png'];
-                        $max_size = 2 * 1024 * 1024;
-                        $file_type = $_FILES['cover_image']['type'];
-                        $file_size = $_FILES['cover_image']['size'];
-                        $file_tmp = $_FILES['cover_image']['tmp_name'];
-                        $file_ext = strtolower(pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION));
-                        $file_name = uniqid('img_') . '.' . $file_ext;
-                        $upload_path = '../images/' . $file_name;
+                    $genre_ids = $old['genre_ids'] ?? '';
+                }
 
-                        if (!in_array($file_type, $allowed_types)) {
-                            $error = 'Only JPG and PNG images are allowed.';
-                        } elseif ($file_size > $max_size) {
-                            $error = 'Image file size must be less than 2MB.';
-                        } elseif (!move_uploaded_file($file_tmp, $upload_path)) {
-                            $error = 'Failed to upload image.';
+                // Validation
+                if (empty($title) || empty($type) || empty($synopsis) || empty($author)) {
+                    $error = 'Title, Type, Synopsis and Author are required.';
+                } elseif (!in_array($type, ['LN', 'WN', 'VN'])) {
+                    $error = 'Invalid type.';
+                } else {
+                    // Handle cover image
+                    $cover_image = $old['cover_image'];
+                    if (!empty($_FILES['cover_image']['name'])) {
+                        $allowed = ['image/jpeg', 'image/png'];
+                        if (in_array($_FILES['cover_image']['type'], $allowed) && $_FILES['cover_image']['size'] <= 2*1024*1024) {
+                            $ext = pathinfo($_FILES['cover_image']['name'], PATHINFO_EXTENSION);
+                            $filename = uniqid('img_') . '.' . $ext;
+                            $path = '../../images/' . $filename;
+                            if (move_uploaded_file($_FILES['cover_image']['tmp_name'], $path)) {
+                                // Delete old image if exists
+                                if ($old['cover_image'] && file_exists('../../' . $old['cover_image'])) {
+                                    @unlink('../../' . $old['cover_image']);
+                                }
+                                $cover_image = 'images/' . $filename;
+                            }
                         } else {
-                            $cover_image = 'images/' . $file_name;
+                            $error = 'Invalid image (JPG/PNG only, max 2MB).';
                         }
                     }
 
                     if (!$error) {
                         $stmt = $db->prepare('
-                            UPDATE titles
-                            SET title = :title, type = :type, synopsis = :synopsis, author = :author,
-                                genre = :genre, tags = :tags, cover_image = :cover_image,
-                                external_link = :external_link, volumes = :volumes,
-                                chapters = :chapters, release_date = :release_date
-                            WHERE title_id = :title_id
+                            UPDATE titles SET
+                            title = ?, type = ?, synopsis = ?, author = ?, tags = ?,
+                            cover_image = ?, external_link = ?, volumes = ?, chapters = ?,
+                            release_date = ?, genre_ids = ?
+                            WHERE title_id = ?
                         ');
                         $stmt->execute([
-                            'title' => $title,
-                            'type' => $type,
-                            'synopsis' => $synopsis,
-                            'author' => $author,
-                            'genre' => $genre,
-                            'tags' => $tags,
-                            'cover_image' => $cover_image,
-                            'external_link' => $external_link,
-                            'volumes' => $volumes,
-                            'chapters' => $chapters,
-                            'release_date' => $release_date,
-                            'title_id' => $title_id
+                            $title, $type, $synopsis, $author, $tags,
+                            $cover_image, $external_link, $volumes, $chapters,
+                            $release_date, $genre_ids, $title_id
                         ]);
-                        $success = 'Title updated successfully.';
+                        $success = 'Title updated successfully!';
                     }
                 }
             }
-        } catch (PDOException $e) {
-            $error = 'Database error: ' . $e->getMessage();
+        } catch (Exception $e) {
+            $error = 'Error: ' . $e->getMessage();
         }
     }
 }
 
+// Load all titles + their current genres
+$titles = $db->query('
+    SELECT title_id, title, type, is_approved, synopsis, author, genre_ids, tags, 
+           cover_image, external_link, volumes, chapters, release_date
+    FROM titles 
+    ORDER BY is_approved ASC, created_at DESC
+')->fetchAll();
+
+// Load all available genres
+$all_genres = [];
 try {
-    $stmt = $db->query('SELECT title_id, title, type, is_approved, synopsis, author, genre, tags, cover_image, external_link, volumes, chapters, release_date FROM titles ORDER BY is_approved ASC, created_at DESC');
-    $titles = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    $error = 'Database error: ' . $e->getMessage();
+    $all_genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_name')->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+    // Table might not exist yet
 }
 ?>
 <!DOCTYPE html>
@@ -162,7 +171,7 @@ try {
                         <?php else: ?>
                             <?php foreach ($titles as $title): ?>
                                 <tr>
-                                    <td><a href="../title.php?id=<?php echo $title['title_id']; ?>"><?php echo htmlspecialchars($title['title']); ?></a></td>
+                                    <td><a href="title.php?id=<?php echo $title['title_id']; ?>"><?php echo htmlspecialchars($title['title']); ?></a></td>
                                     <td><?php echo htmlspecialchars($title['type']); ?></td>
                                     <td><?php echo $title['is_approved'] ? 'Approved' : 'Pending'; ?></td>
                                     <td>
@@ -185,57 +194,94 @@ try {
                                                 <input type="hidden" name="title_id" value="<?php echo $title['title_id']; ?>">
                                                 <input type="hidden" name="action" value="edit">
                                                 <input type="hidden" name="existing_cover_image" value="<?php echo htmlspecialchars($title['cover_image']); ?>">
+
                                                 <div class="mb-3">
-                                                    <label for="title-<?php echo $title['title_id']; ?>" class="form-label"><strong>Title</strong></label>
-                                                    <input type="text" class="form-control" id="title-<?php echo $title['title_id']; ?>" name="title" value="<?php echo htmlspecialchars($title['title']); ?>" required>
+                                                    <label class="form-label"><strong>Title *</strong></label>
+                                                    <input type="text" class="form-control" name="title" value="<?php echo htmlspecialchars($title['title']); ?>" required>
                                                 </div>
+
                                                 <div class="mb-3">
-                                                    <label for="type-<?php echo $title['title_id']; ?>" class="form-label"><strong>Type</strong></label>
-                                                    <select class="form-control" id="type-<?php echo $title['title_id']; ?>" name="type" required>
+                                                    <label class="form-label"><strong>Type *</strong></label>
+                                                    <select class="form-control" name="type" required>
                                                         <option value="LN" <?php echo $title['type'] === 'LN' ? 'selected' : ''; ?>>Light Novel (LN)</option>
                                                         <option value="WN" <?php echo $title['type'] === 'WN' ? 'selected' : ''; ?>>Web Novel (WN)</option>
                                                         <option value="VN" <?php echo $title['type'] === 'VN' ? 'selected' : ''; ?>>Visual Novel (VN)</option>
                                                     </select>
                                                 </div>
+
                                                 <div class="mb-3">
-                                                    <label for="synopsis-<?php echo $title['title_id']; ?>" class="form-label"><strong>Synopsis</strong></label>
-                                                    <textarea class="form-control" id="synopsis-<?php echo $title['title_id']; ?>" name="synopsis" rows="5" required><?php echo htmlspecialchars($title['synopsis']); ?></textarea>
+                                                    <label class="form-label"><strong>Synopsis *</strong></label>
+                                                    <textarea class="form-control" name="synopsis" rows="6" required><?php echo htmlspecialchars($title['synopsis']); ?></textarea>
                                                 </div>
+
                                                 <div class="mb-3">
-                                                    <label for="author-<?php echo $title['title_id']; ?>" class="form-label"><strong>Author</strong></label>
-                                                    <input type="text" class="form-control" id="author-<?php echo $title['title_id']; ?>" name="author" value="<?php echo htmlspecialchars($title['author']); ?>" required>
+                                                    <label class="form-label"><strong>Author *</strong></label>
+                                                    <input type="text" class="form-control" name="author" value="<?php echo htmlspecialchars($title['author']); ?>" required>
                                                 </div>
+
+                                                <?php
+                                                // Load genres for checkboxes
+                                                $all_genres = [];
+                                                try {
+                                                    $all_genres = $db->query('SELECT genre_id, genre_name FROM genres ORDER BY genre_name')->fetchAll(PDO::FETCH_ASSOC);
+                                                } catch (PDOException $e) {}
+                                                $selected_genres = explode(',', $title['genre_ids'] ?? '');
+                                                ?>
+
+                                                <?php if (!empty($all_genres)): ?>
                                                 <div class="mb-3">
-                                                    <label for="genre-<?php echo $title['title_id']; ?>" class="form-label"><strong>Genre</strong></label>
-                                                    <input type="text" class="form-control" id="genre-<?php echo $title['title_id']; ?>" name="genre" value="<?php echo htmlspecialchars($title['genre']); ?>" required>
+                                                    <label class="form-label">Genres</label>
+                                                    <div class="row">
+                                                        <?php foreach ($all_genres as $g): ?>
+                                                        <div class="col-md-4">
+                                                            <div class="form-check">
+                                                                <input class="form-check-input" type="checkbox" name="genres[]" value="<?php echo $g['genre_id']; ?>" 
+                                                                id="g<?php echo $g['genre_id'] . '-' . $title['title_id']; ?>"
+                                                                <?php echo in_array($g['genre_id'], $selected_genres) ? 'checked' : ''; ?>>
+                                                                <label class="form-check-label" for="g<?php echo $g['genre_id'] . '-' . $title['title_id']; ?>">
+                                                                    <?php echo htmlspecialchars($g['genre_name']); ?>
+                                                                </label>
+                                                            </div>
+                                                        </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
                                                 </div>
+                                                <?php endif; ?>
+
                                                 <div class="mb-3">
-                                                    <label for="tags-<?php echo $title['title_id']; ?>" class="form-label"><strong>Tags (comma-separated)</strong></label>
-                                                    <input type="text" class="form-control" id="tags-<?php echo $title['title_id']; ?>" name="tags" value="<?php echo htmlspecialchars($title['tags']); ?>">
+                                                    <label class="form-label"><strong>Tags (comma-separated)</strong></label>
+                                                    <input type="text" class="form-control" name="tags" value="<?php echo htmlspecialchars($title['tags']); ?>">
                                                 </div>
+
                                                 <div class="mb-3">
-                                                    <label for="cover_image-<?php echo $title['title_id']; ?>" class="form-label"><strong>Cover Image (JPG/PNG, max 2MB)</strong></label>
-                                                    <input type="file" class="form-control" id="cover_image-<?php echo $title['title_id']; ?>" name="cover_image" accept="image/jpeg,image/png">
+                                                    <label class="form-label"><strong>Cover Image (JPG/PNG, max 2MB)</strong></label>
+                                                    <input type="file" class="form-control" name="cover_image" accept="image/jpeg,image/png">
                                                     <?php if ($title['cover_image']): ?>
                                                         <small>Current: <?php echo htmlspecialchars($title['cover_image']); ?></small>
                                                     <?php endif; ?>
                                                 </div>
+
                                                 <div class="mb-3">
-                                                    <label for="external_link-<?php echo $title['title_id']; ?>" class="form-label"><strong>External Link</strong></label>
-                                                    <input type="url" class="form-control" id="external_link-<?php echo $title['title_id']; ?>" name="external_link" value="<?php echo htmlspecialchars($title['external_link']); ?>">
+                                                    <label class="form-label"><strong>External Link</strong></label>
+                                                    <input type="url" class="form-control" name="external_link" value="<?php echo htmlspecialchars($title['external_link']); ?>">
                                                 </div>
+
+                                                <div class="row">
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label"><strong>Volumes (for LN)</strong></label>
+                                                        <input type="number" class="form-control" name="volumes" value="<?php echo htmlspecialchars($title['volumes']); ?>" min="0">
+                                                    </div>
+                                                    <div class="col-md-6 mb-3">
+                                                        <label class="form-label"><strong>Chapters (for WN)</strong></label>
+                                                        <input type="number" class="form-control" name="chapters" value="<?php echo htmlspecialchars($title['chapters']); ?>" min="0">
+                                                    </div>
+                                                </div>
+
                                                 <div class="mb-3">
-                                                    <label for="volumes-<?php echo $title['title_id']; ?>" class="form-label"><strong>Volumes (for LN)</strong></label>
-                                                    <input type="number" class="form-control" id="volumes-<?php echo $title['title_id']; ?>" name="volumes" value="<?php echo htmlspecialchars($title['volumes']); ?>" min="0">
+                                                    <label class="form-label"><strong>Release Date</strong></label>
+                                                    <input type="date" class="form-control" name="release_date" value="<?php echo htmlspecialchars($title['release_date']); ?>">
                                                 </div>
-                                                <div class="mb-3">
-                                                    <label for="chapters-<?php echo $title['title_id']; ?>" class="form-label"><strong>Chapters (for WN)</strong></label>
-                                                    <input type="number" class="form-control" id="chapters-<?php echo $title['title_id']; ?>" name="chapters" value="<?php echo htmlspecialchars($title['chapters']); ?>" min="0">
-                                                </div>
-                                                <div class="mb-3">
-                                                    <label for="release_date-<?php echo $title['title_id']; ?>" class="form-label"><strong>Release Date</strong></label>
-                                                    <input type="date" class="form-control" id="release_date-<?php echo $title['title_id']; ?>" name="release_date" value="<?php echo htmlspecialchars($title['release_date']); ?>">
-                                                </div>
+
                                                 <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
                                                 <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('edit-form-<?php echo $title['title_id']; ?>').style.display='none';">Cancel</button>
                                             </form>

@@ -11,8 +11,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
 $total_users = $db->query('SELECT COUNT(*) FROM users')->fetchColumn();
 $total_titles = $db->query('SELECT COUNT(*) FROM titles')->fetchColumn();
 $pending_titles = $db->query('SELECT COUNT(*) FROM titles WHERE is_approved = 0')->fetchColumn();
-$total_comments = $db->query('SELECT COUNT(*) FROM comments')->fetchColumn();
-$active_today = $db->query('SELECT COUNT(DISTINCT user_id) FROM user_reading WHERE DATE(added_at) = CURDATE()')->fetchColumn();
+$pending_reports = $db->query('SELECT COUNT(*) FROM comment_reports')->fetchColumn();
 
 // Recent activity
 $recent_titles = $db->query('SELECT t.title, u.username, t.created_at FROM titles t JOIN users u ON t.added_by = u.user_id ORDER BY t.created_at DESC LIMIT 5')->fetchAll();
@@ -25,7 +24,6 @@ $recent_comments = $db->query('SELECT c.comment, u.username, t.title, c.created_
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard - Ira-Yomi</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { background:linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height:100vh; }
         .dashboard-card { background:white; border-radius:20px; box-shadow:0 10px 30px rgba(0,0,0,0.2); padding:30px; transition:0.3s; }
@@ -58,13 +56,13 @@ $recent_comments = $db->query('SELECT c.comment, u.username, t.title, c.created_
             <div class="col-md-3">
                 <div class="dashboard-card text-center">
                     <div class="stat-number text-warning"><?php echo $pending_titles; ?></div>
-                    <p class="text-muted mb-0">Pending Approval</p>
+                    <p class="text-muted mb-0">Pending Titles</p>
                 </div>
             </div>
             <div class="col-md-3">
                 <div class="dashboard-card text-center">
-                    <div class="stat-number text-success"><?php echo $active_today; ?></div>
-                    <p class="text-muted mb-0">Active Today</p>
+                    <div class="stat-number text-danger"><?php echo $pending_reports; ?></div>
+                    <p class="text-muted mb-0">Pending Reports</p>
                 </div>
             </div>
         </div>
@@ -99,6 +97,7 @@ $recent_comments = $db->query('SELECT c.comment, u.username, t.title, c.created_
         <div class="text-center">
             <a href="manage-titles.php" class="btn btn-primary btn-lg">Manage Titles</a>
             <a href="manage-users.php" class="btn btn-warning btn-lg ms-3">Manage Users</a>
+            <a href="manage-reports.php" class="btn btn-danger btn-lg ms-3">Manage Reports (<?php echo $pending_reports; ?>)</a>
         </div>
     </div>
 </body>
